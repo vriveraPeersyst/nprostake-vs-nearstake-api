@@ -1,6 +1,11 @@
 const NEAR_RPC_URL = "https://rpc.mainnet.near.org";
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
+const PEERSYST_PRICES_API = "https://near-mobile-production.aws.peersyst.tech/api/market";
 const NPRO_PRICE_API = "https://cmc-cg-api.vercel.app/api/v1/token/npro";
+
+// In-memory price cache (survives across requests in the same serverless instance)
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+let nearPriceCache: { price: number; timestamp: number } | null = null;
 
 export interface RpcResponse<T> {
   jsonrpc: string;
@@ -120,24 +125,72 @@ export async function getPoolTotalStaked(poolId: string): Promise<string> {
 }
 
 /**
- * Get NEAR price in USD from CoinGecko
+ * Fetch NEAR price from Peersyst Prices API
+ */
+async function fetchNearPriceFromPeersyst(): Promise<number> {
+  const response = await fetch(PEERSYST_PRICES_API);
+  if (!response.ok) {
+    throw new Error(`Peersyst API returned ${response.status}`);
+  }
+  const data: Array<{ id: string; usdPrice: string }> = await response.json();
+  const nearEntry = data.find((item) => item.id === "near");
+  if (!nearEntry) {
+    throw new Error("NEAR not found in Peersyst API response");
+  }
+  const price = parseFloat(nearEntry.usdPrice);
+  if (isNaN(price) || price <= 0) {
+    throw new Error("Invalid NEAR price from Peersyst API");
+  }
+  return price;
+}
+
+/**
+ * Fetch NEAR price from CoinGecko
+ */
+async function fetchNearPriceFromCoinGecko(): Promise<number> {
+  const response = await fetch(
+    `${COINGECKO_API}/simple/price?ids=near&vs_currencies=usd`
+  );
+  if (!response.ok) {
+    throw new Error(`CoinGecko API returned ${response.status}`);
+  }
+  const data = await response.json();
+  const price = data?.near?.usd;
+  if (typeof price !== "number" || isNaN(price) || price <= 0) {
+    throw new Error("Invalid NEAR price from CoinGecko");
+  }
+  return price;
+}
+
+/**
+ * Get NEAR price in USD with caching and fallback sources.
+ * Tries Peersyst API first, falls back to CoinGecko, then uses cache.
  */
 export async function getNearPriceUsd(): Promise<number> {
-  try {
-    const response = await fetch(
-      `${COINGECKO_API}/simple/price?ids=near&vs_currencies=usd`
-    );
-    
-    if (!response.ok) {
-      throw new Error("Failed to fetch NEAR price from CoinGecko");
-    }
-    
-    const data = await response.json();
-    return data.near.usd;
-  } catch (error) {
-    console.error("Error fetching NEAR price:", error);
-    throw error;
+  // Return cached price if still fresh
+  if (nearPriceCache && Date.now() - nearPriceCache.timestamp < CACHE_TTL_MS) {
+    return nearPriceCache.price;
   }
+
+  const sources = [fetchNearPriceFromPeersyst, fetchNearPriceFromCoinGecko];
+
+  for (const fetchFn of sources) {
+    try {
+      const price = await fetchFn();
+      nearPriceCache = { price, timestamp: Date.now() };
+      return price;
+    } catch (error) {
+      console.warn(`Price source failed: ${(error as Error).message}`);
+    }
+  }
+
+  // All sources failed — use stale cache if available
+  if (nearPriceCache) {
+    console.warn("All price sources failed, using stale cached price");
+    return nearPriceCache.price;
+  }
+
+  throw new Error("Failed to fetch NEAR price from all sources");
 }
 
 /**

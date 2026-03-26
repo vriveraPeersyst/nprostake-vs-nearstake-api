@@ -24,7 +24,7 @@ export async function GET() {
       data: {
         near: {
           usd: nearPriceUsd,
-          source: "coingecko",
+          source: "peersyst-coingecko-cached",
         },
         npro: {
           usd: nproPriceUsd,
