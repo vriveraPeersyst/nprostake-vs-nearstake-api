@@ -1,7 +1,8 @@
 const NEAR_RPC_URL = "https://rpc.mainnet.near.org";
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const PEERSYST_PRICES_API = "https://near-mobile-production.aws.peersyst.tech/api/market";
-const NPRO_PRICE_API = "https://cmc-cg-api.vercel.app/api/v1/token/npro";
+const PRICES_API_URL =
+  process.env.PRICES_API_URL ||
+  "https://near-mobile-production.aws.peersyst.tech/api/market/list?pageSize=100";
 
 // In-memory price cache (survives across requests in the same serverless instance)
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -41,12 +42,31 @@ export interface PoolInfo {
   };
 }
 
-export interface NproPriceResponse {
+export interface PeersystMarketEntry {
+  id: string;
   symbol: string;
   name: string;
-  currency: string;
-  price: string;
-  last_updated: string;
+  usdPrice: string;
+}
+
+export interface PeersystMarketListResponse {
+  pages: number;
+  currentPage: number;
+  items: PeersystMarketEntry[];
+  totalItems: number;
+}
+
+async function fetchMarketEntry(id: string): Promise<PeersystMarketEntry> {
+  const response = await fetch(PRICES_API_URL);
+  if (!response.ok) {
+    throw new Error(`Prices API returned ${response.status}`);
+  }
+  const data: PeersystMarketListResponse = await response.json();
+  const entry = data.items?.find((item) => item.id === id);
+  if (!entry) {
+    throw new Error(`${id} not found in prices API response`);
+  }
+  return entry;
 }
 
 export async function rpcCall<T>(method: string, params: unknown): Promise<T> {
@@ -125,19 +145,11 @@ export async function getPoolTotalStaked(poolId: string): Promise<string> {
 }
 
 /**
- * Fetch NEAR price from Peersyst Prices API
+ * Fetch NEAR price from Peersyst market list API
  */
 async function fetchNearPriceFromPeersyst(): Promise<number> {
-  const response = await fetch(PEERSYST_PRICES_API);
-  if (!response.ok) {
-    throw new Error(`Peersyst API returned ${response.status}`);
-  }
-  const data: Array<{ id: string; usdPrice: string }> = await response.json();
-  const nearEntry = data.find((item) => item.id === "near");
-  if (!nearEntry) {
-    throw new Error("NEAR not found in Peersyst API response");
-  }
-  const price = parseFloat(nearEntry.usdPrice);
+  const entry = await fetchMarketEntry("near");
+  const price = parseFloat(entry.usdPrice);
   if (isNaN(price) || price <= 0) {
     throw new Error("Invalid NEAR price from Peersyst API");
   }
@@ -194,22 +206,16 @@ export async function getNearPriceUsd(): Promise<number> {
 }
 
 /**
- * Get NPRO price in USD from custom API
+ * Get NPRO price in USD from the Peersyst market list API.
+ * Filters the list response for the NPRO entry by id.
  */
 export async function getNproPriceUsd(): Promise<number> {
-  try {
-    const response = await fetch(NPRO_PRICE_API);
-    
-    if (!response.ok) {
-      throw new Error("Failed to fetch NPRO price");
-    }
-    
-    const data: NproPriceResponse = await response.json();
-    return parseFloat(data.price);
-  } catch (error) {
-    console.error("Error fetching NPRO price:", error);
-    throw error;
+  const entry = await fetchMarketEntry("npro");
+  const price = parseFloat(entry.usdPrice);
+  if (isNaN(price) || price <= 0) {
+    throw new Error("Invalid NPRO price from prices API");
   }
+  return price;
 }
 
 /**
