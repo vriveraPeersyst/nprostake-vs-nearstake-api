@@ -33,6 +33,20 @@ export interface EpochValidatorsResult {
   epoch_start_height: number;
 }
 
+/** Subset of `EXPERIMENTAL_protocol_config`. Rationals are returned as [numerator, denominator]. */
+export interface ProtocolConfig {
+  protocol_version: number;
+  epoch_length: number;
+  max_inflation_rate: [number, number];
+  protocol_reward_rate: [number, number];
+}
+
+export interface BlockHeader {
+  height: number;
+  timestamp_nanosec: string;
+  total_supply: string;
+}
+
 export interface PoolInfo {
   total_staked_balance: string;
   owner_id: string;
@@ -113,6 +127,19 @@ export async function viewCall<T>(
 
 export async function getValidators(): Promise<EpochValidatorsResult> {
   return rpcCall<EpochValidatorsResult>("validators", [null]);
+}
+
+export async function getProtocolConfig(): Promise<ProtocolConfig> {
+  return rpcCall<ProtocolConfig>("EXPERIMENTAL_protocol_config", { finality: "final" });
+}
+
+/**
+ * Get a block header. Omit `blockHeight` for the latest final block.
+ */
+export async function getBlockHeader(blockHeight?: number): Promise<BlockHeader> {
+  const params = blockHeight === undefined ? { finality: "final" } : { block_id: blockHeight };
+  const block = await rpcCall<{ header: BlockHeader }>("block", params);
+  return block.header;
 }
 
 export async function getPoolInfo(poolId: string): Promise<PoolInfo> {

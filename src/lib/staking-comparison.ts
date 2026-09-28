@@ -2,15 +2,10 @@ import { getPoolTotalStaked, yoctoToNear, getNearPriceUsd, getNproPriceUsd } fro
 import {
   getCurrentEpoch,
   getNproBondingCurveValue,
-  calculateNearRewardPerEpoch,
-  getEpochDurationSeconds,
   calculateTotalNproOverYear,
   calculateNproEffectiveApy,
-  getEpochsPerYear,
-  DEFAULT_BLOCK_TIME,
-  BLOCKS_PER_EPOCH,
-  NEAR_STAKING_APY,
 } from "./bonding-curve";
+import { getNearStakingParams } from "./near-staking";
 
 const NPRO_POOL_ID = "npro.poolv1.near";
 
@@ -32,9 +27,11 @@ export interface StakingComparisonResult {
     totalStakedUsd: number;
   };
   
-  // NEAR staking rewards (from normal 4.5% APY validator)
+  // NEAR staking rewards (0% fee validator), derived from on-chain inflation and total stake
   nearStaking: {
     apyPercent: number;
+    aprPercent: number;
+    epochRewardRatePercent: number;
     nearEarnedPerEpoch: number;
     nearEarnedPerEpochUsd: number;
     nearEarnedPerYear: number;
@@ -65,6 +62,15 @@ export interface StakingComparisonResult {
     summary: string;
   };
   
+  // Network-wide inputs to the NEAR staking APY
+  network: {
+    totalSupplyNear: number;
+    totalStakedNear: number;
+    stakingRatioPercent: number;
+    maxInflationRatePercent: number;
+    protocolRewardRatePercent: number;
+  };
+
   // Prices
   prices: {
     nearUsd: number;
@@ -85,29 +91,30 @@ export async function calculateStakingComparison(): Promise<StakingComparisonRes
     currentEpoch,
     nearPriceUsd,
     nproPriceUsd,
+    nearParams,
   ] = await Promise.all([
     getPoolTotalStaked(NPRO_POOL_ID),
     getCurrentEpoch(),
     getNearPriceUsd(),
     getNproPriceUsd(),
+    getNearStakingParams(),
   ]);
 
   const totalStakedNear = yoctoToNear(totalStakedYocto);
   const totalStakedUsd = totalStakedNear * nearPriceUsd;
   const nextEpoch = currentEpoch + 1;
   
-  // Calculate epoch duration
-  const blockTime = DEFAULT_BLOCK_TIME;
-  const epochDurationSeconds = getEpochDurationSeconds(blockTime);
+  // Epoch duration from the block time measured on-chain
+  const { blockTime, epochDurationSeconds, epochsPerYear } = nearParams;
   const epochDurationHours = epochDurationSeconds / 3600;
-  const epochsPerYear = getEpochsPerYear(blockTime);
 
   // ============================================
-  // NEAR Staking Rewards (4.5% APY validator)
+  // NEAR Staking Rewards (0% fee validator)
   // ============================================
-  const nearEarnedPerEpoch = calculateNearRewardPerEpoch(totalStakedNear, blockTime);
+  const nearApyPercent = nearParams.apy * 100;
+  const nearEarnedPerEpoch = totalStakedNear * nearParams.epochRewardRate;
   const nearEarnedPerEpochUsd = nearEarnedPerEpoch * nearPriceUsd;
-  const nearEarnedPerYear = totalStakedNear * NEAR_STAKING_APY;
+  const nearEarnedPerYear = totalStakedNear * nearParams.apy;
   const nearEarnedPerYearUsd = nearEarnedPerYear * nearPriceUsd;
 
   // ============================================
@@ -161,16 +168,16 @@ export async function calculateStakingComparison(): Promise<StakingComparisonRes
   }
 
   const summary = yearlyBetterOption === "npro"
-    ? `NPRO staking yields ${nproEffectiveApy.toFixed(2)}% effective APY vs NEAR's 4.5% (+$${yearlyDifferenceUsd.toFixed(2)}/year)`
+    ? `NPRO staking yields ${nproEffectiveApy.toFixed(2)}% effective APY vs NEAR's ${nearApyPercent.toFixed(2)}% (+$${yearlyDifferenceUsd.toFixed(2)}/year)`
     : yearlyBetterOption === "near"
-    ? `NEAR staking is better: 4.5% APY vs NPRO's ${nproEffectiveApy.toFixed(2)}% effective APY`
+    ? `NEAR staking is better: ${nearApyPercent.toFixed(2)}% APY vs NPRO's ${nproEffectiveApy.toFixed(2)}% effective APY`
     : `Both options yield approximately equal returns`;
 
   return {
     epoch: {
       current: currentEpoch,
       next: nextEpoch,
-      blocksPerEpoch: BLOCKS_PER_EPOCH,
+      blocksPerEpoch: nearParams.epochLength,
       epochDurationSeconds,
       epochDurationHours,
       epochsPerYear,
@@ -181,7 +188,9 @@ export async function calculateStakingComparison(): Promise<StakingComparisonRes
       totalStakedUsd,
     },
     nearStaking: {
-      apyPercent: NEAR_STAKING_APY * 100,
+      apyPercent: nearApyPercent,
+      aprPercent: nearParams.apr * 100,
+      epochRewardRatePercent: nearParams.epochRewardRate * 100,
       nearEarnedPerEpoch,
       nearEarnedPerEpochUsd,
       nearEarnedPerYear,
@@ -204,6 +213,13 @@ export async function calculateStakingComparison(): Promise<StakingComparisonRes
       differencePercent: yearlyDifferencePercent,
       betterOption: yearlyBetterOption,
       summary,
+    },
+    network: {
+      totalSupplyNear: nearParams.totalSupplyNear,
+      totalStakedNear: nearParams.totalStakedNear,
+      stakingRatioPercent: nearParams.stakingRatio * 100,
+      maxInflationRatePercent: nearParams.maxInflationRate * 100,
+      protocolRewardRatePercent: nearParams.protocolRewardRate * 100,
     },
     prices: {
       nearUsd: nearPriceUsd,

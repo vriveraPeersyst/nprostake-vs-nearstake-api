@@ -2,7 +2,7 @@
 
 A Vercel API built with Next.js and TypeScript that compares staking rewards between:
 - **NPRO Pool** (`npro.poolv1.near`) - Rewards in NPRO tokens based on bonding curve with decay
-- **Regular NEAR Staking** - Direct NEAR rewards at 4.5% APY from a 0% fee validator
+- **Regular NEAR Staking** - Direct NEAR rewards from a 0% fee validator, at the APY the protocol currently pays
 
 ## Live Demo
 
@@ -13,8 +13,31 @@ Deploy to Vercel and access the API endpoints.
 The API compares the **USD value** of rewards, accounting for bonding curve decay over time:
 
 ### NEAR Staking Rewards
-- Fixed 4.5% APY
-- Rewards compound each epoch (~7.5 hours)
+The APY is derived live from chain data, following nearcore's reward calculator
+(`chain/epoch-manager/src/reward_calculator.rs`):
+
+```
+epochReward = totalSupply × maxInflationRate × epochDuration / 365 days
+toValidators = epochReward × (1 − protocolRewardRate)        # 10% goes to the treasury
+yourReward   = toValidators × yourStake / totalStake          # 0% fee, full uptime
+```
+
+So the per-epoch return on stake is
+
+```
+r   = (1 − protocolRewardRate) × maxInflationRate × (totalSupply / totalStake) × epochDuration / 365 days
+APR = r × epochsPerYear
+APY = (1 + r)^epochsPerYear − 1                              # staking pools restake every epoch
+```
+
+| Input | Source |
+|-------|--------|
+| `maxInflationRate` (2.5% since protocol v81), `protocolRewardRate` (10%), `epochLength` | `EXPERIMENTAL_protocol_config` |
+| `totalSupply` | latest final block header |
+| `totalStake` | sum of current validators' stake (`validators`) |
+| `epochDuration` | `epochLength` × block time measured over the current epoch |
+
+The yield therefore drops when more NEAR is staked and rises when stake leaves the network.
 
 ### NPRO Staking Rewards  
 - Follows exponential decay bonding curve: `R(t) = R₀ × e^(-λt)`
@@ -62,7 +85,9 @@ curl "https://your-api.vercel.app/api/compare?amount=1000"
       "totalStakedUsd": 530000
     },
     "nearStaking": {
-      "apyPercent": 4.5,
+      "apyPercent": 4.27,
+      "aprPercent": 4.18,
+      "epochRewardRatePercent": 0.00343,
       "nearEarnedPerEpoch": 3.84,
       "nearEarnedPerEpochUsd": 20.35,
       "nearEarnedPerYear": 4500,
@@ -84,7 +109,14 @@ curl "https://your-api.vercel.app/api/compare?amount=1000"
       "differenceUsd": 1472150,
       "differencePercent": 6172.5,
       "betterOption": "npro",
-      "summary": "NPRO staking yields 282.5% effective APY vs NEAR's 4.5%"
+      "summary": "NPRO staking yields 282.5% effective APY vs NEAR's 4.27%"
+    },
+    "network": {
+      "totalSupplyNear": 1300000000,
+      "totalStakedNear": 700000000,
+      "stakingRatioPercent": 53.85,
+      "maxInflationRatePercent": 2.5,
+      "protocolRewardRatePercent": 10
     },
     "prices": {
       "nearUsd": 5.3,
@@ -161,6 +193,7 @@ src/
 │   └── layout.tsx
 └── lib/
     ├── bonding-curve.ts       # NPRO decay calculations
+    ├── near-staking.ts        # NEAR staking APY from inflation & total stake
     ├── near.ts                # RPC & price fetching
     └── staking-comparison.ts  # Core comparison logic
 ```
@@ -170,9 +203,8 @@ src/
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `BLOCKS_PER_EPOCH` | 43,200 | Blocks in one epoch |
-| `DEFAULT_BLOCK_TIME` | 0.623s | Average block time |
+| `DEFAULT_BLOCK_TIME` | 0.623s | Fallback block time (normally measured on-chain) |
 | `NPRO_START_BLOCK` | 164,137,435 | NPRO distribution start |
-| `NEAR_STAKING_APY` | 4.5% | Standard validator APY |
 | `R₀` | 1892.82 | Initial NPRO per epoch |
 | `λ` | 0.000237 | Decay rate |
 

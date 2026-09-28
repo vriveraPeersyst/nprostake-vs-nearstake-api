@@ -6,7 +6,7 @@ export default function Home() {
           NPRO Staking vs NEAR Staking Comparison API
         </h1>
         <p className="text-gray-400 mb-8">
-          Compare staking rewards between NPRO pool (npro.poolv1.near) and regular NEAR staking (4.5% APY).
+          Compare staking rewards between NPRO pool (npro.poolv1.near) and regular NEAR staking (APY derived from on-chain inflation and total stake).
         </p>
 
         <div className="space-y-8">
@@ -97,7 +97,7 @@ export default function Home() {
                       totalStakedUsd: 530000,
                     },
                     nearStaking: {
-                      apyPercent: 4.5,
+                      apyPercent: 4.27,
                       nearEarnedPerEpoch: 3.84,
                       nearEarnedPerEpochUsd: 20.35,
                     },
@@ -129,7 +129,7 @@ export default function Home() {
               <li>Fetches current block and calculates epoch number from NEAR RPC</li>
               <li>Gets total NEAR staked in npro.poolv1.near</li>
               <li>Fetches NEAR price from CoinGecko and NPRO price from custom API</li>
-              <li>Calculates NEAR earned per epoch based on 4.5% APY</li>
+              <li>Calculates the NEAR staking APY from on-chain data: (1 − treasury share) × inflation × total supply / total stake, compounded each epoch</li>
               <li>Calculates NPRO distributed per epoch using the bonding curve: R(t) = R₀ × e^(-λt)</li>
               <li>Compares USD value of rewards and returns percentage difference</li>
             </ol>
