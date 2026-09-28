@@ -15,9 +15,6 @@ export const DEFAULT_BLOCK_TIME = 0.623; // Default block time in seconds
 export const NPRO_START_BLOCK = 164137435; // Block when NPRO distribution started
 export const NPRO_START_EPOCH = 1; // Epoch 1 is when NPRO distribution started
 
-// NEAR staking APY
-export const NEAR_STAKING_APY = 0.045; // 4.5% APY
-
 // Cache for current block number
 let cachedCurrentBlock: number | null = null;
 let currentBlockCacheExpiry: number = 0;
@@ -116,28 +113,6 @@ export function getNproBondingCurveValue(epochNumber: number): number {
   const result = r0 * Math.exp(exponent);
   
   return result;
-}
-
-/**
- * Calculate NEAR earned per epoch based on 4.5% APY
- * @param totalStakedNear Total NEAR staked in the pool
- * @param blockTime Average block time in seconds
- * @returns NEAR earned in one epoch
- */
-export function calculateNearRewardPerEpoch(
-  totalStakedNear: number,
-  blockTime: number = DEFAULT_BLOCK_TIME
-): number {
-  const epochDurationSeconds = getEpochDurationSeconds(blockTime);
-  const secondsPerYear = getSecondsPerYear();
-  
-  // Convert annual APY to per-epoch rate
-  // APY = (1 + r)^n - 1, where n is number of periods per year
-  // For simplicity, we use simple interest: epoch_rate = APY * (epoch_duration / year_duration)
-  const epochsPerYear = secondsPerYear / epochDurationSeconds;
-  const nearRewardPerEpoch = (totalStakedNear * NEAR_STAKING_APY) / epochsPerYear;
-  
-  return nearRewardPerEpoch;
 }
 
 /**
