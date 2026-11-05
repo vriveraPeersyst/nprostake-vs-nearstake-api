@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateStakingComparison, calculateUserStakingComparison } from "@/lib/staking-comparison";
+import { CDN_CACHE_HEADERS } from "@/lib/cache";
 
 export const runtime = "edge";
 export const revalidate = 60; // Cache for 1 minute
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: comparison,
-      });
+      }, { headers: CDN_CACHE_HEADERS });
     }
 
     // Calculate pool-wide comparison
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: comparison,
-    });
+    }, { headers: CDN_CACHE_HEADERS });
   } catch (error) {
     console.error("Error calculating comparison:", error);
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getValidators, getPoolInfo, yoctoToNear } from "@/lib/near";
+import { CDN_CACHE_HEADERS } from "@/lib/cache";
 
 export const runtime = "edge";
 
@@ -59,7 +60,7 @@ export async function GET() {
         },
         topValidators,
       },
-    });
+    }, { headers: CDN_CACHE_HEADERS });
   } catch (error) {
     console.error("Error fetching validators:", error);
     return NextResponse.json(

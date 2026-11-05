@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getNearPriceUsd, getNproPriceUsd } from "@/lib/near";
+import { CDN_CACHE_HEADERS } from "@/lib/cache";
 
 export const runtime = "edge";
 export const revalidate = 60; // Cache for 1 minute
@@ -33,7 +34,7 @@ export async function GET() {
         },
         timestamp: new Date().toISOString(),
       },
-    });
+    }, { headers: CDN_CACHE_HEADERS });
   } catch (error) {
     console.error("Error fetching prices:", error);
     return NextResponse.json(
